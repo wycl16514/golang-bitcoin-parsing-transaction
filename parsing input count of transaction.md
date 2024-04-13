@@ -353,3 +353,17 @@ transaction version: 1
 input count is : 2
 ```
 
+command for getting trasnaction raw data:
+curl https://docs-demo.btc.quiknode.pro/ \
+    -X POST \
+    -H "Content-Type: application/json" \
+    --data '{"method": "getrawtransaction", "params": ["464dd72e17069e6b55487ae75971df57280091988fbae9ca8fc1abedafddfcbc", 0]}'
+
+Legacy transaction: 
+f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16
+
+Segwit transaction:
+464dd72e17069e6b55487ae75971df57280091988fbae9ca8fc1abedafddfcbc
+
+464dd72e17069e6b55487ae75971df57280091988fbae9ca8fc1abedafddfcbc
+
