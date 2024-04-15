@@ -233,6 +233,7 @@ func ReadVarint(reader *bytes.Reader) *big.Int {
 	if v.Cmp(big.NewInt(int64(0xfe))) == 0 {
 		//first byte 0xfe, read the following 4 bytes to get the number of input
 		i1 := make([]byte, 4)
+                reader.Read(i1)
 		return LittleEndianToBigInt(i1, LITTLE_ENDIAN_4_BYTES)
 	}
 
