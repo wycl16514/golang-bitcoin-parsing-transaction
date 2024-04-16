@@ -200,6 +200,11 @@ func ParseTransaction(binary []byte) *Transaction {
 	}
 	transaction.txOutputs = transactionOutputs
 
+        //the last four bytes are locktime
+	lockTimeBytes := make([]byte, 4)
+	bufReader.Read(lockTimeBytes)
+	transaction.lockTime = LittleEndianToBigInt(lockTimeBytes, LITTLE_ENDIAN_4_BYTES)
+
 	return &transaction
 }
 
