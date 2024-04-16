@@ -35,8 +35,7 @@ Then follows the raw data for ScriptSig, it is variable length, different transa
 Finally the last four bytes are for sequence:
 feffffff
 
-Let's see how to use code for the parsing of input, first we create a ScriptSig Object and we will pay attention to the parsing of it in later sections, create a file name script_sig.go in transaction
-folder and input the following code:
+Let's see how to use code for the parsing of input, first we create a ScriptSig Object and we will pay attention to the parsing of it in later sections, create a file name script_sig.go in transaction folder and input the following code:
 ```g
 package transaction
 
@@ -155,5 +154,59 @@ input count is : 1
 previous transaction id: d1c789a9c60383bf715f3f6ad9d14b91fe55f3deb369fe5d9280cb1a01793f81
 previous transaction idex: 0
 ```
+After parsing data related to transaction inputs, we begin the parsing of outputs, we use { and } extract data for output like following
+
+0100000001813f79011acb80925dfe69b3def355fe914bd1d96a3f5f71bf8303c6a989c7d1000000006b483045022100ed81ff192e75a3fd2304004dcadb746fa5e24c5031ccfcf21320b0277457c98f02207a986d955c6e0cb35d446a89d3f56100f4d7f67801c31967743a9c8e10615bed01210349fc4e631e3624a545de3f89f5d8684c7b8138bd94bdd531d2e213bf016b278afeffffff
+{ 02a135ef01000000001976a914bc3b654dca7e56b04dca18f2566cdaf02e8d9ada88ac99c39800000000001976a9141c4bc762dd5423e332166702cb75f40df79fea1288ac19430600}
+
+The first byte behide the { is 0x02, it is smaller than 0xfd and this byte can be used for the count of output. An output object contains two fields one is amount, this field records
+the how many satoshis in the output, "satoshi" is the smallest unit in bitcoin, one satoshi is 1/1,000,000,000 of a bitcoin. The other field is ScriptPubKey which is the same as 
+ScriptSig of input.This just like a safe for the money in the output, only the owner of the output can sepnd the money in the output and ScriptPubKey is used to verify the identity
+of real onwer.
+
+Let's check from the above example:
+amount: 135ef0100000000
+ScriptPubKey: 1976a914bc3b654dca7e56b04dca18f2566cdaf02e8d9ada88ac
+
+we will dive deep into ScriptSig and ScriptPubKey in later sections, let's add some code in transaction for getting output objects:
+```g
+func ParseTransaction(binary []byte) *Transaction {
+	transaction := Transaction{}
+	reader := bytes.NewReader(binary)
+	bufReader := bufio.NewReader(reader)
+
+	verBuf := make([]byte, 4)
+	bufReader.Read(verBuf)
+
+	version := LittleEndianToBigInt(verBuf, LITTLE_ENDIAN_4_BYTES)
+	fmt.Printf("transaction version: %x\n", version)
+
+	transaction.version = version
+
+	inputs := getInputCount(bufReader)
+	transactionInputs := []*TransactinInput{}
+	//create transaction input object by its count
+	for i := 0; i < int(inputs.Int64()); i++ {
+		input := NewTransactinInput(bufReader)
+		transactionInputs = append(transactionInputs, input)
+	}
+	transaction.txInputs = transactionInputs
+
+	outputs := ReadVarint(bufReader)
+	transactionOutputs := []*TransactionOutput{}
+	for i := 0; i < int(outputs.Int64()); i++ {
+		output := NewTransactionOutput(bufReader)
+		transactionOutputs = append(transactionOutputs, output)
+	}
+	transaction.txOutputs = transactionOutputs
+
+	return &transaction
+}
+
+```
+we can't run the code above because we havn't parse ScriptSig yet and the pointer in the bufReader can't point to the read position for output object we will handle the problem in 
+later section.
+
+
 
    
