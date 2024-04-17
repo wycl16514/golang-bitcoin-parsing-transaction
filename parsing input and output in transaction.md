@@ -2,6 +2,7 @@ Inputs and Outputs are main components in transaction, and we need some effort t
 
 
 There are four components in the raw data of input:
+
 1, Previous trnasaction ID, this is 32 bytes data in little endian , it is hash256 hash for previous transaction, for example if your company pays you 10 dollars,
 this paying is the previous transacton. you use this 10 dollars to buy a 3 dollar coffee, then the buying is current transaction, 
 the previous transaction id is the hash256 result of transaction that you company paying you 10 dollars.
@@ -9,8 +10,8 @@ the previous transaction id is the hash256 result of transaction that you compan
 2, Previous transaction index.  Your company may pay you twice, one for you salary (10 dollars), one for you bounus (20 dollars), then you will have two inputs for the current transaction. The previous
 ID let you choose which payment you will use to pay the current coffee.
 
-3. ScriptSig, the use of this filed just like the signing on you check or input password when you swap your credit card.It is used to verify you are the real owner of the input money in this transaction.
-   You don't want others steal you money for their own spend. This field is a chunk of data with variable length, it has to do with bitcoin's smart contract language, we will focus on this in later sections
+3. ScriptSig, the use of this filed just like the signing on you check or input password when you swap your credit card.It is used to verify you are the real owner of the input money in this transaction. You don't want others steal you money for their own spend. This field is a chunk of data with variable length, it has to do with bitcoin's smart contract language,
+we will focus on this in later sections
 
 4. Sequence, this field is depricated, we just ingore it for saving brain cells.
 
