@@ -101,7 +101,7 @@ Then we can parse the given transaction raw data, get its amount of  transaction
 a new function for input:
 ```g
 func (t *TransactinInput) Value(testnet bool) *big.Int {
-	previous := fmt.Sprintf("%x", t.previousTransaction)
+	previousTxID := fmt.Sprintf("%x", t.previousTransaction)
 	previousTX := t.fetcher.Fetch(previous, testnet)
 	tx := ParseTransaction(previousTX)
 	//get the amount of previous transaction output
