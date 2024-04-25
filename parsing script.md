@@ -113,6 +113,93 @@ func NewScriptSig(reader *bufio.Reader) *ScriptSig {
 
 ```
 
+The above code transfer an byte slice for script into the ScritSig object, and we can provide method for reverse operation that is serialize an ScriptSig object into byte slice,
+the code is like following:
+```g
+func (s *ScriptSig) rawSerialize() []byte {
+	result := []byte{}
+	for _, cmd := range s.cmds {
+		if len(cmd) == 1 {
+			//only one byte means its an instruction
+			result = append(result, cmd...)
+		} else {
+			length := len(cmd)
+			if length <= SCRIPT_DATA_LENGTH_END {
+				//length in the range [0x1, 0x4b]
+				result = append(result, byte(length))
+			} else if length > SCRIPT_DATA_LENGTH_END && length < 0x100 {
+				//this is OP_PUSHDATA1 command, push the command then the
+				//next byte is data length
+				result = append(result, OP_PUSHDATA1)
+				result = append(result, byte(length))
+			} else if length >= 0x100 && length <= 520 {
+				/*
+					this is OP_PUSHDATA2, push the command, then two bytes length
+					in littale endian
+				*/
+				result = append(result, OP_PUSHDATA2)
+				lenBuf := BigIntToLittleEndian(big.NewInt(int64(length)), LITTLE_ENDIAN_2_BYTES)
+				result = append(result, lenBuf...)
+			} else {
+				panic("too long an cmd")
+			}
+
+			//append the chunk of data with given length
+			result = append(result, cmd...)
+		}
+	}
+
+	return result
+}
+
+func (s *ScriptSig) Serialize() []byte {
+	rawResult := s.rawSerialize()
+	total := len(rawResult)
+	result := []byte{}
+	//encode the total length of the script at the head
+	result = append(result, EncodeVarint(big.NewInt(int64(total)))...)
+	result = append(result, rawResult...)
+	return result
+}
+
+```
+let's try to run the code in input like following:
+```g
+func NewTransactinInput(reader *bufio.Reader) *TransactinInput {
+....
+    transactionInput.scriptSig = NewScriptSig(reader)
+    //testing script serialize
+    scriptBuf := transactionInput.scriptSig.Serialize()
+    fmt.Printf("script byte : %x\n", scriptBuf)
+....
+}
+
+```
+
+Then we run the code in main.go again:
+```g
+func main() {
+	// // //legacy transaction
+	binaryStr := "0100000001813f79011acb80925dfe69b3def355fe914bd1d96a3f5f71bf8303c6a989c7d1000000006b483045022100ed81ff192e75a3fd2304004dcadb746fa5e24c5031ccfcf21320b0277457c98f02207a986d955c6e0cb35d446a89d3f56100f4d7f67801c31967743a9c8e10615bed01210349fc4e631e3624a545de3f89f5d8684c7b8138bd94bdd531d2e213bf016b278afeffffff02a135ef01000000001976a914bc3b654dca7e56b04dca18f2566cdaf02e8d9ada88ac99c39800000000001976a9141c4bc762dd5423e332166702cb75f40df79fea1288ac19430600"
+	binary, err := hex.DecodeString(binaryStr)
+	if err != nil {
+		panic(err)
+	}
+
+	tx.ParseTransaction(binary)
+}
+```
+Then the ouput is like following:
+```
+ransaction version: 1
+input count is : 1
+previous transaction id: d1c789a9c60383bf715f3f6ad9d14b91fe55f3deb369fe5d9280cb1a01793f81
+previous transaction idex: 0
+script byte : 6b483045022100ed81ff192e75a3fd2304004dcadb746fa5e24c5031ccfcf21320b0277457c98f02207a986d955c6e0cb35d446a89d3f56100f4d7f67801c31967743a9c8e10615bed01210349fc4e631e3624a545de3f89f5d8684c7b8138bd94bdd531d2e213bf016b278a
+
+```
+We can see the content of script byte is really being part of the transaction binary raw data which means we are parsing the scrit and serialize it correctly.
+
 
 
 
