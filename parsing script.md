@@ -23,11 +23,98 @@ if the the value of n is not in the range of [0x01, 0x4b], which means this byte
 0xa9: OP_HASH160
 0xac: OP_CHECKSIG
 
+you can look for more details about instruction here: https://en.bitcoin.it/wiki/Script
+
 as we mentionded above, if the byte with value in [0x01, 0x4b] means we need to push the following bytes with length given by the value on to the stack, which means we can only push at most 0x4b(75) bytes
 on the stack, what if we want to push more bytes on to stack? for such situation we need three special operation, if the value with given byte is 0x4c(76) which means it is an instruction OP_PUSHDATA1,
 then we need to read the value of following byte to how how many bytes we need to push on to the stack, the value of the following byte is in the range of [0x4b, 0xff], if the byte takes value 77, which means
 it is an instruction OP_PUSHDATA2, then we need to read the following two bytes in little endian as the length of the bytes we need to push on the stack, 
 this instruction eanble us to push at most 520 bytes on to the stack, any data with length more than 520 is not allowed to transfer by the network. 
+
+You may confused by the process above, let's give out the code that may clear the cloud around you head. In script_sig.go we add following code:
+```g
+package transaction
+
+import (
+	"bufio"
+)
+
+type ScriptSig struct {
+	cmds []byte
+}
+
+const (
+	SCRIPT_DATA_LENGTH_BEGIN = 1
+	SCRIPT_DATA_LENGTH_END   = 75
+	OP_PUSHDATA1             = 76
+	OP_PUSHDATA2             = 77
+)
+
+func NewScriptSig(reader *bufio.Reader) *ScriptSig {
+	cmds := []byte{}
+	/*
+		At the beginning is the total length for script field, and
+		we need to get the length just like how we get the transaction
+		input count
+	*/
+	scriptLen := ReadVarint(reader).Int64()
+	count := int64(0)
+	current := make([]byte, 1)
+	var current_byte byte
+	for count < scriptLen {
+		reader.Read(current)
+		count += 1
+		current_byte = current[0]
+		if current_byte >= SCRIPT_DATA_LENGTH_BEGIN &&
+			current_byte <= SCRIPT_DATA_LENGTH_END {
+			//push the following bytes as data on the stack
+			data := make([]byte, current_byte)
+			reader.Read(data)
+			cmds = append(cmds, data...)
+			count += int64(current_byte)
+		} else if current_byte == OP_PUSHDATA1 {
+			/*
+				it is instruction OP_PUSHDATA1, we need to read the following
+				bytes as the length of data, then push following bytes with
+				given length on to stack
+			*/
+			length := make([]byte, 1)
+			reader.Read(length)
+			data := make([]byte, length[0])
+			reader.Read(data)
+			cmds = append(cmds, data...)
+			count += int64(length[0] + 1)
+		} else if current_byte == OP_PUSHDATA2 {
+			/*
+				we need to read the following 2 bytes in little endian
+				as the length of data byte we need to read at following
+			*/
+			lenBuf := make([]byte, 2)
+			reader.Read(lenBuf)
+			length := LittleEndianToBigInt(lenBuf, LITTLE_ENDIAN_2_BYTES)
+			data := make([]byte, length.Int64())
+			cmds = append(cmds, data...)
+			count += length.Int64() + 2
+		} else {
+			//current byte is an instruction
+			cmds = append(cmds, current_byte)
+
+		}
+	}
+
+	if count != scriptLen {
+		panic("parsing script field failed")
+	}
+
+	return &ScriptSig{
+		cmds: cmds,
+	}
+}
+
+```
+
+
+
 
 
 
