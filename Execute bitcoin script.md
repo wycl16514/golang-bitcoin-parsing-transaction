@@ -8,7 +8,7 @@ negative number, if the aboslute value of the negative number has its most signi
 
 For example for -1, its positive counterpart is 1 with binary foramt 0000 0001, the most significant one is 0, then we set 1 to 1 its the binary format of -1, that is 1000 0001, the hex value is 0x81.
 for value -1233, its positive counterpart is 1234, its binary format is 0000 0100 1101 0010, then for -1234, we need to set the significant bit to 1 that is 1000 0100 1101 0010 and its hex byte array is 
-0x8b 0xD2, for another example -32896, its positive counter part is 32896 with hex byte array (0x80, 0x80) and its binary format is 1000 0000 1000 0000, we can see its most significant bit is already 1,
+0x84 0xD2, for another example -32896, its positive counter part is 32896 with hex byte array (0x80, 0x80) and its binary format is 1000 0000 1000 0000, we can see its most significant bit is already 1,
 this time we need to insert 0x80 at the head which is 1000 0000 1000 0000 1000 0000, in hex byte array is 0x80, 0x80, 0x80. 
 
 Let's see how to use code to implement this scheme, create a new file called op.go and add code like following:
