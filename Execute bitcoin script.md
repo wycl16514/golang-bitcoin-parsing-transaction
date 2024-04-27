@@ -81,6 +81,10 @@ func (b *BitcoinOpCode) EncodeNum(num int64) []byte {
 }
 
 func (b *BitcoinOpCode) DecodeNum(element []byte) int64 {
+        //check empty byte string
+	if len(element) == 0 {
+		return 0
+	}
 	//reverse of EncodeNum
 	//reverse the byte array to big endian
 	bigEndian := reverseByteSlice(element)
