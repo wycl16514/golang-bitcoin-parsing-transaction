@@ -267,6 +267,7 @@ type BitcoinOpCode struct {
 	opCodeNames map[int]string
 }
 
+
 func NewBicoinOpCode() *BitcoinOpCode {
 	opCodeNames := map[int]string{
 		0:   "OP_0",
@@ -366,4 +367,157 @@ func NewBicoinOpCode() *BitcoinOpCode {
 	}
 }
 ```
-We define the value with its op code, you can check the link above to verify whether the value is right for the given op code.
+We define the value with its op code, you can check the link above to verify whether the value is right for the given op code. Let's add a Evaluate method to 
+execute given bitcoin operation code:
+```g
+func (b *BitcoinOpCode) ExecuteOperation(stack [][]byte, altStack [][]byte,
+	cmd int, cmds [][]byte, z []byte) bool {
+	/*
+		if the operation executed successfuly return true, otherwise return false
+	*/
+	switch cmd {
+	case OP_CHECKSIG:
+		b.opCheckSig(stack, z)
+
+	default:
+		errStr := fmt.Sprintf("operation %s not implemented\n", b.opCodeNames[cmd])
+		panic(errStr)
+	}
+
+	return false
+}
+```
+In the above code, we only handle instruction for OP_CHECKSIG, this op code use to verify a signature is valid or not. The input z is for the message need to be
+verify, and the public key and signature der binary raw data are pushed onto the stack, altStack is not used here but it will be used by other op code. And we need
+the command stack from ScriptSig because we may change this stack by some op code.
+
+In the method above, we check whether the op code is OP_CHECKSIG , if it is we call opCheckSig method to handle it, let's see the code for this method:
+```g
+func (b *BitcoinOpCode) opCheckSig(stack [][]byte, zBin []byte) bool {
+	/*
+		OP_CHECKSIG verify the validity of message z,
+		DER binary format of signature and uncompressed sec public key
+		are top two elements on the stack,
+		notice!! we need to take off the last byte of der binary, because the
+		last byte is for hash type
+		if signature verification success, push 1 on the stack, otherwise push 0 on the stack
+	*/
+	if len(stack) < 2 {
+		return false
+	}
+	pubKey := stack[len(stack)-1]
+	stack = stack[0 : len(stack)-1]
+	derSig := stack[len(stack)-1]
+	derSig = derSig[0 : len(derSig)-1]
+	stack = stack[0 : len(stack)-1]
+	point := ecc.ParseSEC(pubKey)
+	sig := ecc.ParseSigBin(derSig)
+
+	z := new(big.Int)
+	z.SetBytes(zBin)
+	n := ecc.GetBitcoinValueN()
+	zField := ecc.NewFieldElement(n, z)
+	if point.Verify(zField, sig) == true {
+		stack = append(stack, b.EncodeNum(1))
+	} else {
+		stack = append(stack, b.EncodeNum(0))
+	}
+
+	return true
+}
+```
+The method assumed the public key and signature der binary data are already pushed on to the stack, and be noticed that, when we get the der binary data, we need to
+remove the last byte which is used to indicate the hash type and it is not belonged to the binary data of signature. The public key is in uncompressed sec format, 
+if the script is using uncompressed sec format for public key, we call such kind of script p2pk (pay to public key), it has some problem and we will see other kinds
+of script in later section.
+
+In script.go, we have some change in the code like following:
+```g
+func InitScriptSig(cmds [][]byte) *ScriptSig {
+	return &ScriptSig{
+		cmds:          cmds,
+		bitcoinOpCode: NewBitcoinOpCode(),
+	}
+}
+
+func NewScriptSig(reader *bufio.Reader) *ScriptSig {
+	cmds := [][]byte{}
+        ...
+        return InitScriptSig(cmds)
+}
+
+func (s *ScriptSig) Evaluate(z []byte) bool {
+	stack := make([][]byte, 0)
+	altStack := make([][]byte, 0)
+	for len(s.cmds) > 0 {
+		cmd := s.cmds[0]
+		s.cmds = s.cmds[1:]
+		if len(cmd) == 1 {
+			//this is an op code, run it
+			s.bitcoinOpCode.ExecuteOperation(stack, altStack, int(cmd[0]), s.cmds, z)
+		} else {
+			stack = append(stack, cmd)
+		}
+	}
+
+	/*
+		After running all operation in the script and the stack is empty,
+		then the evaluation fail, otherwise we check the top element of stack
+		if it is not 0 then success, otherwise fail
+	*/
+	if len(stack) == 0 {
+		return false
+	}
+
+	if len(stack[0]) == 0 {
+		return false
+	}
+
+	return true
+}
+```
+
+In the above code, we add a new constructor function InitScriptSig, this method enable us to generate a ScriptSig object by using the commands array. We also add
+an important method that is Evaluate, this method used to run the script commands with given input z. It get each command out from the command array, if the command
+is byte array with length 1, then this is bitcoin op code then we call the ExecuteOperation method from BitcoinOpCode object, otherwise we just push the data on to
+the stack.
+
+Noticed that, when complete the running of all op code, we need to check the result base on the stack, if the stack is empty or if there is 0 on the top of stack
+which means the running of the script is failure, if there is not 0 value on the stack, then the running of script is success.
+
+Finanlly let's go to the main.go and add some testing code there:
+```g
+package main
+
+import (
+	"encoding/hex"
+	"fmt"
+	tx "transaction"
+)
+
+func main() {
+	sec, err := hex.DecodeString(`04887387e452b8eacc4acfde10d9aaf7f6d9a0f975aabb10d006e4da568744d06c61de6d95231cd89026e286df3b6ae4a894a3378e393e93a0f45b666329a0ae34`)
+	if err != nil {
+		panic(err)
+	}
+	derSig, err := hex.DecodeString(`3045022000eff69ef2b1bd93a66ed5219add4fb51e11a840f404876325a1e8ffe0529a2c022100c7207fee197d27c618aea621406f6bf5ef6fca38681d82b2f06fddbdce6feab601`)
+
+	if err != nil {
+		panic(err)
+	}
+	cmds := make([][]byte, 0)
+	cmds = append(cmds, derSig)
+	cmds = append(cmds, sec)
+	cmds = append(cmds, []byte{tx.OP_CHECKSIG})
+	script := tx.InitScriptSig(cmds)
+	evalRes := script.Evaluate(z)
+	fmt.Printf("script evaluation result is :%v", evalRes)
+}
+```
+In the above code, we generate public key uncompressed SEC data and signature DER binary data from hex string,  push them on to a command stack, and at the end we
+push the OP_CHECKSIG op code, using InitScriptSig to initiliaze a ScriptSig object and call its Evaluate method to run the OP_CHECKSIG op code, following is the
+running result:
+```g
+script evaluation result is :true
+```
+Which means the script is used to verify the given signature is valid or not, and after running the script the result is that the signature is valid.
