@@ -96,5 +96,167 @@ func main() {
 }
 
 ```
-Run the above code and check the serialization result is the same as the binary content of script byte slice, if so which means we construct the ScriptSig object
-successfully.
+Run the above code and check the serialization result is the same as the binary content of script byte slice, if so which means we construct the ScriptSig object successfully.
+
+Now we need to add code to handle command like OP_EQUALVERIFY, OP_DUP, OP_HASH160, add the following code in op.go, in the code, we do some
+refactory, we move stack, altStack ad cmds from ScriptSig to BitcoinOperationCode:
+```g
+type BitcoinOpCode struct {
+	opCodeNames map[int]string
+	stack       [][]byte
+	altStack    [][]byte
+	cmds        [][]byte
+}
+
+func NewBitcoinOpCode() *BitcoinOpCode {
+    ....
+    return &BitcoinOpCode{
+		opCodeNames: opCodeNames,
+		stack:       make([][]byte, 0),
+		altStack:    make([][]byte, 0),
+		cmds:        make([][]byte, 0),
+	}
+}
+
+func (b *BitcoinOpCode) opDup() bool {
+	if len(b.stack) < 1 {
+		return false
+	}
+
+	b.stack = append(b.stack, b.stack[len(b.stack)-1])
+	return true
+}
+
+func (b *BitcoinOpCode) opHash160() bool {
+	if len(b.stack) < 1 {
+		return false
+	}
+
+	element := b.stack[len(b.stack)-1]
+	b.stack = b.stack[0 : len(b.stack)-1]
+	hash160 := ecc.Hash160(element)
+	b.stack = append(b.stack, hash160)
+	return true
+}
+
+func (b *BitcoinOpCode) opEqual() bool {
+	if len(b.stack) < 2 {
+		return false
+	}
+
+	elem1 := b.stack[len(b.stack)-1]
+	b.stack = b.stack[0 : len(b.stack)-1]
+	elem2 := b.stack[len(b.stack)-1]
+	b.stack = b.stack[0 : len(b.stack)-1]
+	if bytes.Equal(elem1, elem2) {
+		b.stack = append(b.stack, b.EncodeNum(1))
+	} else {
+		b.stack = append(b.stack, b.EncodeNum(0))
+	}
+	return true
+}
+
+func (b *BitcoinOpCode) opVerify() bool {
+	if len(b.stack) < 1 {
+		return false
+	}
+
+	elem := b.stack[len(b.stack)-1]
+	b.stack = b.stack[0 : len(b.stack)-1]
+	if b.DecodeNum(elem) == 0 {
+		return false
+	}
+
+	return true
+}
+
+func (b *BitcoinOpCode) opEqualVerify() bool {
+	resEqual := b.opEqual()
+	resVerify := b.opVerify()
+	return resEqual && resVerify
+}
+
+func (b *BitcoinOpCode) RemoveCmd() []byte {
+	cmd := b.cmds[0]
+	b.cmds = b.cmds[1:]
+	return cmd
+}
+
+func (b *BitcoinOpCode) HasCmd() bool {
+	return len(b.cmds) > 0
+}
+
+func (b *BitcoinOpCode) AppendDataElement(element []byte) {
+	b.stack = append(b.stack, element)
+}
+```
+
+opDup is for handling of OP_DUP command, it just copy the top element on the stack and push it on to the stack, this will result in two 
+elements with same value on the stack. opHash160 is for command OP_HASH160, it takes the top elemenet from stack and compute its hash160
+and push the result onto the stack.
+
+opEqual is for OP_EQUAL command, it takes the top two elements from the top of stack, compare their value, if they are the same, push value
+1 on the stack, if not push value 0 on the stack, opVerify is for command OP_VERIFY, it checks the element on the top of stack, if its value
+is 0, then return false, otherwise return true.
+
+opEqualVerify is for command OP_EQUALVERIFY, it is the combination of OP_EQUAL and OP_VERIFY, we add three new helper functions to 
+BitcoinOperationCode, RemoveCmd takes one command from the command array, HasCmd check whether there are commands need to be handle,
+and AppendDataElement append data element to the command stack.
+
+Then we goto script_sig.go and modify its code like following:
+```g
+func InitScriptSig(cmds [][]byte) *ScriptSig {
+	bitcoinOpCode := NewBitcoinOpCode()
+	bitcoinOpCode.cmds = cmds
+	return &ScriptSig{
+		bitcoinOpCode: bitcoinOpCode,
+	}
+}
+
+func (s *ScriptSig) Evaluate(z []byte) bool {
+	for s.bitcoinOpCode.HasCmd() {
+		cmd := s.bitcoinOpCode.RemoveCmd()
+		if len(cmd) == 1 {
+			//this is an op code, run it
+			opRes := s.bitcoinOpCode.ExecuteOperation(int(cmd[0]), z)
+			if opRes != true {
+				return false
+			}
+		} else {
+			s.bitcoinOpCode.AppendDataElement(cmd)
+		}
+	}
+
+	/*
+		After running all operation in the script and the stack is empty,
+		then the evaluation fail, otherwise we check the top element of stack
+		if it is not 0 then success, otherwise fail
+	*/
+	if len(s.bitcoinOpCode.stack) == 0 {
+		return false
+	}
+
+	if len(s.bitcoinOpCode.stack[0]) == 0 {
+		return false
+	}
+
+	return true
+}
+```
+
+we simplify the inputs for ExecuteOperation of BitcoinOperationCode because we move those two stacks and command array into it,
+by the refactory, the code can be clearer than before. Now go to main.go to evaluate the script:
+```
+func main() {
+    ....
+    evalRes := scriptSig.Evaluate(z.Bytes())
+    fmt.Printf("result of script evaluation is %v\n", evalRes)
+}
+```
+
+Run the code and we can get the following result:
+```g
+result of script evaluation is true
+```
+
+
