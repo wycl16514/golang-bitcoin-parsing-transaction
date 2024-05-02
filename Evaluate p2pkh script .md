@@ -259,4 +259,106 @@ Run the code and we can get the following result:
 result of script evaluation is true
 ```
 
+We have handcraft the script by using our hand, actually a script is constructed by using the ScriptSig of current transaction and ScriptPubKey from the output of 
+previous trnascation like following:
+
+![bitcoin_script (5)](https://github.com/wycl16514/golang-bitcoin-parsing-transaction/assets/7506958/576de25a-c1f1-4189-9aa7-7184bb978be7)
+
+Let's see how we can construct the script from current transaction and previous transaction, fist we need add code to parse the transaction output:
+```g
+package transaction
+
+import (
+	"bufio"
+	"math/big"
+)
+
+type TransactionOutput struct {
+	amount       *big.Int
+	scriptPubKey *ScriptSig
+}
+
+func NewTransactionOutput(reader *bufio.Reader) *TransactionOutput {
+        /*
+          amount is in stashi which is 1/100,000,000 of one bitcoin
+        */
+	amountBuf := make([]byte, 8)
+	reader.Read(amountBuf)
+	amount := LittleEndianToBigInt(amountBuf, LITTLE_ENDIAN_8_BYTES)
+	script := NewScriptSig(reader)
+	return &TransactionOutput{
+		amount:       amount,
+		scriptPubKey: script,
+	}
+}
+
+func (t *TransactionOutput) Serialize() []byte {
+	result := make([]byte, 0)
+	result = append(result,
+		BigIntToLittleEndian(t.amount, LITTLE_ENDIAN_8_BYTES)...)
+	result = append(result, t.scriptPubKey.Serialize()...)
+	return result
+}
+
+```
+
+and let's add the serialize method for transaction input too:
+```g
+func (t *TransactinInput) Serialize() []byte {
+	result := make([]byte, 0)
+	result = append(result, reverseByteSlice(t.previousTransaction)...)
+	result = append(result,
+		BigIntToLittleEndian(t.previousTransactionIdex,
+			LITTLE_ENDIAN_4_BYTES)...)
+	result = append(result, t.scriptSig.Serialize()...)
+	result = append(result,
+		BigIntToLittleEndian(t.sequence, LITTLE_ENDIAN_4_BYTES)...)
+	return result
+}
+
+```
+
+We add a method to combine the commands of two ScriptSig object:
+```g
+func (s *ScriptSig) Add(script *ScriptSig) *ScriptSig {
+	cmds := make([][]byte, 0)
+	cmds = append(cmds, s.bitcoinOpCode.cmds...)
+	cmds = append(cmds, script.bitcoinOpCode.cmds...)
+	return InitScriptSig(cmds)
+}
+```
+Now we get the previous transaction, extract its transaction output script oject, using the method above to construct the script we need to evaluate:
+```g
+func (t *Transaction) GetScript(idx int, testnet bool) *ScriptSig {
+	if idx < 0 || idx >= len(t.txInputs) {
+		panic("invalid index for transaction input")
+	}
+
+	txInput := t.txInputs[idx]
+	return txInput.Script(testnet)
+}
+```
+Then we can goto the main.go and test the code above:
+```g
+
+func main() {
+	//legacy transaction
+	binaryStr := "0100000001813f79011acb80925dfe69b3def355fe914bd1d96a3f5f71bf8303c6a989c7d1000000006b483045022100ed81ff192e75a3fd2304004dcadb746fa5e24c5031ccfcf21320b0277457c98f02207a986d955c6e0cb35d446a89d3f56100f4d7f67801c31967743a9c8e10615bed01210349fc4e631e3624a545de3f89f5d8684c7b8138bd94bdd531d2e213bf016b278afeffffff02a135ef01000000001976a914bc3b654dca7e56b04dca18f2566cdaf02e8d9ada88ac99c39800000000001976a9141c4bc762dd5423e332166702cb75f40df79fea1288ac19430600"
+
+	binary, err := hex.DecodeString(binaryStr)
+	if err != nil {
+		panic(err)
+	}
+
+	transaction := tx.ParseTransaction(binary)
+
+	script := transaction.GetScript(0, false)
+	//this is not our transaction and we don't have its message
+	script.Evaluate([]byte{})
+}
+```
+We don't have the message for the given sgnature because the transaction is not created by us. By debugging the above code we can find out the script for previous
+transaction output has command like OP_DUP, OP_HASH160, OP_EQUALVERIFY and OP_CHECKSIG, the evaluate will fail at the step of OP_CHECKSIG because we don't have its
+message, but we can make sure the combined script is correct.
+
 
